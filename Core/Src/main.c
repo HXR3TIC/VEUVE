@@ -21,9 +21,12 @@
 #include "adc.h"
 #include "dac.h"
 #include "dma.h"
+#include "stm32l4xx_hal_adc.h"
+#include "stm32l4xx_hal_dac.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
+#include <stdint.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -48,6 +51,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+#define ADC_BUFFER_LENGTH 64
+uint16_t adc_buffer[ADC_BUFFER_LENGTH]; // Buffer to hold ADC values (output from guitar will be stored here)
 
 /* USER CODE END PV */
 
@@ -96,7 +101,12 @@ int main(void)
   MX_USART2_UART_Init();
   MX_DAC1_Init();
   MX_TIM6_Init();
+
   /* USER CODE BEGIN 2 */
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, ADC_BUFFER_LENGTH); // start ADC in DMA mode, load values into adc_buffer
+  HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)adc_buffer, ADC_BUFFER_LENGTH, DAC_ALIGN_12B_R); // start DAC in DMA mode, output values from adc_buffer to DAC channel, DAC_ALIGN_12B_R allows for easy data storage withotu bit shifting 
+  HAL_TIM_Base_Start(&htim6); // start timer 6, which will trigger DACconversions at regular intervals
+  HAL_TIM_Base_Start(&htim2); // start timer 2, which will trigger ADC conversions at regular intervals
 
   /* USER CODE END 2 */
 
