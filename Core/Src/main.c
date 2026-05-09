@@ -51,8 +51,34 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-#define ADC_BUFFER_LENGTH 64
+#define ADC_RESOLUTION 4096 // 12-bit ADC, values range from 0 to 4095
+#define ADC_BUFFER_LENGTH 64 // number of samples to process at a time
 uint16_t adc_buffer[ADC_BUFFER_LENGTH]; // Buffer to hold ADC values (output from guitar will be stored here)
+
+// --------------------------------------------------------------------------------------
+//
+//                                  EFFECT SETTINGS
+//
+// --------------------------------------------------------------------------------------
+
+/**
+  * @attention: Effect parameters, can be adjusted to create different sounds
+
+  * EFFECTS: 0 for passthrough, 1 for distortion, 2 for octave fuzz
+
+  * PASSTHROUGH: no settings
+  * DISTORTION:
+  *   EFFECT_THRESHOLD: is the minimum value for the clipping to take place
+  *   GAIN: amplifes the signal before clipping, can be adjusted to create different sounds from mild distortion to full on fuzz
+*/
+
+// general effect settings
+#define EFFECT 1 // select effect to apply, via comment above
+#define MIX 0.5f // mix between dry and wet signal, 0.5 for equal mix
+
+// distortion settings
+#define EFFECT_THRESHOLD 500.0f // threshold for effect to be applied, can be adjusted based on testing
+#define GAIN 2.0f // gain for distortion effect, adjust based on preference
 
 /* USER CODE END PV */
 
@@ -105,8 +131,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, ADC_BUFFER_LENGTH); // start ADC in DMA mode, load values into adc_buffer
   HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t*)adc_buffer, ADC_BUFFER_LENGTH, DAC_ALIGN_12B_R); // start DAC in DMA mode, output values from adc_buffer to DAC channel, DAC_ALIGN_12B_R allows for easy data storage withotu bit shifting 
-  HAL_TIM_Base_Start(&htim6); // start timer 6, which will trigger DACconversions at regular intervals
-  HAL_TIM_Base_Start(&htim2); // start timer 2, which will trigger ADC conversions at regular intervals
+  HAL_TIM_Base_Start(&htim6); // start timer 6, which will trigger DAC conversions at regular intervals
 
   /* USER CODE END 2 */
 
@@ -171,6 +196,79 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+// -----------------------------------------------------------------------------------------------------
+//
+//                                   EFFECT IMPLEMENTATION 
+//
+// -----------------------------------------------------------------------------------------------------
+
+void ProcessAudio(uint16_t* buffer, uint32_t length) {
+    for (uint32_t i = 0; i < length; i++) {
+        float dry = (float)buffer[i]; // cast to a float for processing, accounts for negative values and floating points, also prevents overflows
+        float wet = dry;
+
+        #if EFFECT == 0
+        // ----------------------------------
+        // PASSTHROUGH
+        // ----------------------------------
+        #endif
+
+        #if EFFECT == 1
+        // ----------------------------------
+        // DISTORTION
+        // ----------------------------------
+
+        wet = wet - 2048.0f; // DC offset removal
+        wet = wet * GAIN; // apply gain for more pronounced clipping
+
+        // clipping 
+        if (wet > EFFECT_THRESHOLD) {
+            wet = EFFECT_THRESHOLD;
+        } else if (wet < -EFFECT_THRESHOLD) {
+            wet = -EFFECT_THRESHOLD;
+        }
+
+        // DC offset restoration
+        wet = wet + 2048.0f;
+
+        // ensure sample is within 12-bit range after processing
+        if (wet > 4095.0f) wet = 4095.0f;
+        if (wet < 0.0f)    wet = 0.0f;
+
+        float blend = (dry * (1.0f - MIX)) + (wet * MIX); // interpolate between dry and wet based on MIX ratio
+
+        // save result back to buffer, cast back to uint16_t
+        buffer[i] = (uint16_t)blend;
+        #endif
+
+        #if EFFECT == 2
+        // ----------------------------------
+        // OCTAVE FUZZ
+        // ----------------------------------
+
+        wet = wet - 2048.0f; // DC offset removal
+        if (wet < 0) wet = wet * -1.0f; // make signal positive for octave effect
+        wet = wet + 2048.0f; // DC offset restoration
+        blend = (dry * (1.0f - MIX)) + (wet * MIX); // interpolate between dry and wet based on MIX ratio
+        buffer[i] = (uint16_t)blend;
+        #endif
+    }
+
+}
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
+
+  ProcessAudio(adc_buffer, ADC_BUFFER_LENGTH/2);
+
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+
+  ProcessAudio(adc_buffer + ADC_BUFFER_LENGTH/2, ADC_BUFFER_LENGTH/2);
+
+}
+
 
 /* USER CODE END 4 */
 
